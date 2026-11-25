@@ -6,3 +6,5 @@
 .jaw{background-size:contain;transform:translateY(var(--jaw)) scale(1.04)}
 @keyframes idle-sway{0%,100%{transform:translateY(0) rotate(-.9deg) scale(1)}50%{transform:translateY(-5px) rotate(.9deg) scale(1.035)}}
 @media(prefers-reduced-motion:reduce){#portrait{animation:none}.jaw{display:none}}
+
+.face-canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;transform:scale(1.04);pointer-events:none;z-index:1}
