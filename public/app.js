@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id),status=$('status'),message=$('message'),portrait=$('portrait'),start=$('start'),mute=$('mute'),demo=$('demo'),remote=$('remote');let pc,mic,ctx,analyser,frame,timer,limit,gen=0,connecting=false,enabled=false;
-function say(s,m){status.textContent=s;message.textContent=m;}function motion(v){portrait.style.setProperty('--jaw',v*8+'px');portrait.style.setProperty('--energy',String(v));}
+function say(s,m){status.textContent=s;message.textContent=m;}function motion(v){portrait.style.setProperty('--jaw',v*8+'px');portrait.style.setProperty('--energy',String(v));portrait.classList.toggle('speaking',v>.08);}
 function stopDemo(){clearInterval(timer);timer=undefined;try{speechSynthesis.cancel()}catch{}motion(0);}
 function reset(){gen++;clearTimeout(limit);stopDemo();cancelAnimationFrame(frame);if(pc){pc.onconnectionstatechange=null;pc.close();pc=null;}mic?.getTracks().forEach(t=>t.stop());mic=null;remote.srcObject=null;ctx?.close().catch(()=>{});ctx=null;analyser=null;connecting=false;start.disabled=!enabled;start.textContent='Conversar';mute.disabled=true;mute.textContent='Silenciar';demo.disabled=false;}
 fetch('/config').then(r=>r.json()).then(c=>{enabled=c.realtime;start.disabled=!enabled;if(enabled)$('hint').textContent='Autorize o microfone para conversar.';}).catch(()=>{});
@@ -8,23 +8,26 @@ start.onclick=async()=>{if(pc||connecting){reset();say('Em espera','Conversa enc
 ctx=new (window.AudioContext||window.webkitAudioContext)();await ctx.resume();const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});if(run!==gen){stream.getTracks().forEach(t=>t.stop());return;}mic=stream;const peer=new RTCPeerConnection();pc=peer;peer.ontrack=e=>{if(run!==gen)return;const s=e.streams[0]||new MediaStream([e.track]);remote.srcObject=s;remote.play().catch(()=>{message.textContent='Toque na tela para liberar o áudio.';document.addEventListener('click',()=>remote.play().catch(()=>{}),{once:true});});try{analyser=ctx.createAnalyser();analyser.fftSize=512;ctx.createMediaStreamSource(s).connect(analyser);animate();}catch{}};peer.onconnectionstatechange=()=>{if(run!==gen)return;if(peer.connectionState==='connected'){connecting=false;start.textContent='Encerrar';mute.disabled=false;say('Ouvindo','Pode falar. Sessão de até 15 minutos.');clearTimeout(limit);limit=setTimeout(()=>{reset();say('Em espera','Sessão encerrada.');},900000);}else if(['failed','closed'].includes(peer.connectionState)){reset();say('Desconectado','Tente novamente.');}};mic.getTracks().forEach(t=>peer.addTrack(t,mic));const dc=peer.createDataChannel('oai-events');dc.onmessage=e=>{try{if(JSON.parse(e.data).type==='error')message.textContent='Erro na sessão.';}catch{}};const offer=await peer.createOffer();await peer.setLocalDescription(offer);const r=await fetch('/session',{method:'POST',headers:{'Content-Type':'application/sdp'},body:offer.sdp});const answer=await r.text();if(run!==gen)return;if(!r.ok)throw Error(answer);await peer.setRemoteDescription({type:'answer',sdp:answer});
 }catch(e){if(run===gen){reset();say('Não conectado',e.message||'Falha na conexão.');}}};
 mute.onclick=()=>{if(!mic)return;const t=mic.getAudioTracks()[0];t.enabled=!t.enabled;mute.textContent=t.enabled?'Silenciar':'Ativar mic';};
-demo.onclick=()=>{if(!('speechSynthesis'in window)){say('Indisponível','Este navegador não oferece voz.');return;}stopDemo();const u=new SpeechSynthesisUtterance('Olá! Eu sou a Raposa Virtual. Esta é uma demonstração da minha voz. Quando a inteligência artificial for ativada, poderemos conversar.');u.lang='pt-BR';u.rate=.94;u.onstart=()=>{say('Demonstração','Voz de exemplo, sem IA.');timer=setInterval(()=>motion(Math.random()*.65+.15),95);};u.onend=u.onerror=()=>{clearInterval(timer);motion(0);say('Em espera','Toque em Testar voz para repetir.');};speechSynthesis.speak(u);};window.addEventListener('pagehide',reset);
+demo.onclick=()=>{if(!('speechSynthesis'in window)){say('Indisponível','Este navegador não oferece voz.');return;}stopDemo();const u=new SpeechSynthesisUtterance('Olá! Eu sou a Raposa Virtual. Esta é uma demonstração da minha voz. Quando a inteligência artificial for ativada, poderemos conversar.');u.lang='pt-BR';u.rate=.94;const began=performance.now();say('Demonstração','Voz de exemplo, sem IA.');motion(.8);timer=setInterval(()=>{const t=(performance.now()-began)/1000;motion(.12+.88*Math.pow(Math.abs(Math.sin(t*13)*Math.cos(t*4.1)),.6));if(t>20){clearInterval(timer);motion(0);}},65);u.onstart=()=>{say('Demonstração','Voz de exemplo, sem IA.');};u.onend=u.onerror=()=>{clearInterval(timer);motion(0);say('Em espera','Toque em Testar voz para repetir.');};speechSynthesis.speak(u);};window.addEventListener('pagehide',reset);
 
-/* Face animation: local pixel deformation of the original portrait. */
+
+/* Version 0.4: visible mouth and eyelid deformation, with explicit demo opt-in. */
 (()=>{
- const img=portrait.querySelector('img'), canvas=document.createElement('canvas');
- canvas.setAttribute('aria-hidden','true'); canvas.className='face-canvas';
- const c=canvas.getContext('2d',{willReadFrequently:true}); let src,out,w,h,raf,epoch;
- function init(){if(!img.naturalWidth||!c||window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;w=canvas.width=img.naturalWidth;h=canvas.height=img.naturalHeight;c.drawImage(img,0,0);src=c.getImageData(0,0,w,h);out=c.createImageData(w,h);portrait.insertBefore(canvas,portrait.querySelector('.jaw'));img.style.visibility='hidden';portrait.querySelector('.jaw').style.display='none';epoch=performance.now();raf=requestAnimationFrame(tick);}
- function tick(now){const t=(now-epoch)/1000,phase=t%4.6;const blink=Math.max(0,1-Math.abs(phase-2.8)/.14);const energy=Number(portrait.style.getPropertyValue('--energy'))||0;
+ const img=portrait.querySelector('img'), canvas=document.createElement('canvas'), c=canvas.getContext('2d',{willReadFrequently:true});
+ canvas.setAttribute('aria-hidden','true');canvas.className='face-canvas';let src,out,w,h,raf,epoch,fields,previous=0;
+ const reduced=matchMedia('(prefers-reduced-motion: reduce)');
+ function init(){if(src||!img.naturalWidth||!c)return;w=canvas.width=img.naturalWidth;h=canvas.height=img.naturalHeight;c.drawImage(img,0,0);src=c.getImageData(0,0,w,h);out=c.createImageData(w,h);fields=new Float32Array(w*h*2);
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){const nx=x/w,ny=y/h,k=(y*w+x)*2;
+ let eye=0;for(const [ex,ey] of [[.398,.375],[.658,.385]]){const dx=(nx-ex)/.085,dy=(ny-ey)/.04;eye+=(ny-ey)*3.7*Math.exp(-dx*dx*1.5-dy*dy*.8);}
+ const dx=(nx-.535)/.13,dy=(ny-.59)/.09;fields[k]=eye;fields[k+1]=.045*Math.exp(-dx*dx-dy*dy)*Math.max(0,1+dy*.45);}
+ portrait.insertBefore(canvas,portrait.querySelector('.jaw'));img.style.visibility='hidden';portrait.querySelector('.jaw').style.display='none';epoch=performance.now();raf=requestAnimationFrame(tick);}
+ function tick(now){raf=requestAnimationFrame(tick);if(now-previous<30)return;previous=now;
+ const t=(now-epoch)/1000,phase=t%3.8,energy=Math.max(0,Math.min(1,Number(portrait.style.getPropertyValue('--energy'))||0)),blink=reduced.matches&&!energy?0:Math.max(0,1-Math.abs(phase-1.8)/.18);
  const s=src.data,d=out.data;
- for(let y=0;y<h;y++){for(let x=0;x<w;x++){
- const nx=x/w,ny=y/h;let sy=ny;
- for(const [ex,ey] of [[.373,.377],[.655,.391]]){const dx=(nx-ex)/.065,dy=(ny-ey)/.031;const weight=Math.exp(-dx*dx*1.5-dy*dy*.8);sy+=(ny-ey)*blink*2.3*weight;}
- const mx=(nx-.525)/.105,my=(ny-.555)/.055;sy-=energy*.016*Math.exp(-mx*mx-my*my)*Math.max(0,1+my);
- const i=(y*w+x)*4,j=(Math.max(0,Math.min(h-1,Math.round(sy*h)))*w+x)*4;
- d[i]=s[j];d[i+1]=s[j+1];d[i+2]=s[j+2];d[i+3]=255;
- }}
- c.putImageData(out,0,0);raf=requestAnimationFrame(tick);}
- if(img.complete)init();else img.addEventListener('load',init,{once:true});window.addEventListener('pagehide',()=>cancelAnimationFrame(raf));window.addEventListener('pageshow',e=>{if(e.persisted&&src)raf=requestAnimationFrame(tick);});
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){const k=y*w+x,i=k*4,sy=y+(fields[k*2]*blink-fields[k*2+1]*energy)*h,yy=Math.max(0,Math.min(h-1,sy)),lo=Math.floor(yy),hi=Math.min(h-1,lo+1),a=yy-lo,j=(lo*w+x)*4,l=(hi*w+x)*4;
+ d[i]=s[j]*(1-a)+s[l]*a;d[i+1]=s[j+1]*(1-a)+s[l+1]*a;d[i+2]=s[j+2]*(1-a)+s[l+2]*a;d[i+3]=255;}
+ c.putImageData(out,0,0);
+ if(energy>.1){c.save();c.translate(w*.53,h*.562);c.rotate(-.035);const gap=h*(.004+.024*energy);const g=c.createLinearGradient(0,-gap,0,gap);g.addColorStop(0,'#432c25');g.addColorStop(.5,'#201411');g.addColorStop(1,'#664039');c.fillStyle=g;c.beginPath();c.ellipse(0,0,w*(.046+.033*energy),gap,0,0,Math.PI*2);c.fill();c.restore();}
+ }
+ if(img.complete)init();else img.addEventListener('load',init,{once:true});demo.addEventListener('click',init);window.addEventListener('pagehide',()=>cancelAnimationFrame(raf));window.addEventListener('pageshow',e=>{if(e.persisted&&src)raf=requestAnimationFrame(tick);});
 })();
