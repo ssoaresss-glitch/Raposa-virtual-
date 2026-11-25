@@ -9,3 +9,22 @@ ctx=new (window.AudioContext||window.webkitAudioContext)();await ctx.resume();co
 }catch(e){if(run===gen){reset();say('Não conectado',e.message||'Falha na conexão.');}}};
 mute.onclick=()=>{if(!mic)return;const t=mic.getAudioTracks()[0];t.enabled=!t.enabled;mute.textContent=t.enabled?'Silenciar':'Ativar mic';};
 demo.onclick=()=>{if(!('speechSynthesis'in window)){say('Indisponível','Este navegador não oferece voz.');return;}stopDemo();const u=new SpeechSynthesisUtterance('Olá! Eu sou a Raposa Virtual. Esta é uma demonstração da minha voz. Quando a inteligência artificial for ativada, poderemos conversar.');u.lang='pt-BR';u.rate=.94;u.onstart=()=>{say('Demonstração','Voz de exemplo, sem IA.');timer=setInterval(()=>motion(Math.random()*.65+.15),95);};u.onend=u.onerror=()=>{clearInterval(timer);motion(0);say('Em espera','Toque em Testar voz para repetir.');};speechSynthesis.speak(u);};window.addEventListener('pagehide',reset);
+
+/* Face animation: local pixel deformation of the original portrait. */
+(()=>{
+ const img=portrait.querySelector('img'), canvas=document.createElement('canvas');
+ canvas.setAttribute('aria-hidden','true'); canvas.className='face-canvas';
+ const c=canvas.getContext('2d',{willReadFrequently:true}); let src,out,w,h,raf,epoch;
+ function init(){if(!img.naturalWidth||!c||window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;w=canvas.width=img.naturalWidth;h=canvas.height=img.naturalHeight;c.drawImage(img,0,0);src=c.getImageData(0,0,w,h);out=c.createImageData(w,h);portrait.insertBefore(canvas,portrait.querySelector('.jaw'));img.style.visibility='hidden';portrait.querySelector('.jaw').style.display='none';epoch=performance.now();raf=requestAnimationFrame(tick);}
+ function tick(now){const t=(now-epoch)/1000,phase=t%4.6;const blink=Math.max(0,1-Math.abs(phase-2.8)/.14);const energy=Number(portrait.style.getPropertyValue('--energy'))||0;
+ const s=src.data,d=out.data;
+ for(let y=0;y<h;y++){for(let x=0;x<w;x++){
+ const nx=x/w,ny=y/h;let sy=ny;
+ for(const [ex,ey] of [[.373,.377],[.655,.391]]){const dx=(nx-ex)/.065,dy=(ny-ey)/.031;const weight=Math.exp(-dx*dx*1.5-dy*dy*.8);sy+=(ny-ey)*blink*2.3*weight;}
+ const mx=(nx-.525)/.105,my=(ny-.555)/.055;sy-=energy*.016*Math.exp(-mx*mx-my*my)*Math.max(0,1+my);
+ const i=(y*w+x)*4,j=(Math.max(0,Math.min(h-1,Math.round(sy*h)))*w+x)*4;
+ d[i]=s[j];d[i+1]=s[j+1];d[i+2]=s[j+2];d[i+3]=255;
+ }}
+ c.putImageData(out,0,0);raf=requestAnimationFrame(tick);}
+ if(img.complete)init();else img.addEventListener('load',init,{once:true});window.addEventListener('pagehide',()=>cancelAnimationFrame(raf));window.addEventListener('pageshow',e=>{if(e.persisted&&src)raf=requestAnimationFrame(tick);});
+})();
